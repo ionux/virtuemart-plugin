@@ -292,6 +292,11 @@ class plgVmPaymentBitPay extends vmPSPlugin
 
 		$modelOrder = VmModel::getModel ('orders');
 		$order = $modelOrder->getOrder($virtuemart_order_id);
+		if (!$order) {
+			bplog('order could not be loaded '.$virtuemart_order_id);
+			return NULL;
+		}
+
 		$method = $this->getVmPluginMethod($order['details']['BT']->virtuemart_paymentmethod_id);
 		if ($bitpay_data['posData']['hash'] != crypt($order_number, $method->merchant_apikey))
 		{
@@ -302,11 +307,6 @@ class plgVmPaymentBitPay extends vmPSPlugin
 		if ($bitpay_data['status'] != 'confirmed' and $bitpay_data['status'] != 'complete')
 		{
 			return NULL; // not the status we're looking for 
-		}
-
-		if (!$order) {
-			bplog('order could not be loaded '.$virtuemart_order_id);
-			return NULL;
 		}
 		
 		$order['order_status'] = 'C'; // move to admin method option?
