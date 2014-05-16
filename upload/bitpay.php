@@ -2,14 +2,7 @@
 
 function bplog($contents)
 {
-	$file = 'logs/bplog.txt';
-	file_put_contents($file, date('m-d H:i:s').": ", FILE_APPEND);
-	if (is_array($contents))
-		file_put_contents($file, var_export($contents, true)."\n", FILE_APPEND);		
-	else if (is_object($contents))
-		file_put_contents($file, json_encode($contents)."\n", FILE_APPEND);
-	else
-		file_put_contents($file, $contents."\n", FILE_APPEND);
+	error_log($contents);
 }
 
 
@@ -518,6 +511,7 @@ class plgVmPaymentBitPay extends vmPSPlugin
 			'Content-Type: application/json',
 			"Content-Length: $length",
 			"Authorization: Basic $uname",
+			'X-BitPay-Plugin-Info: virtuemart033114',
 			);
 
 		curl_setopt($curl, CURLOPT_PORT, 443);
@@ -546,7 +540,7 @@ class plgVmPaymentBitPay extends vmPSPlugin
 			exit;
 		}
 		else
-			bplog($response);
+			bplog('curl error - no invoice url');
 		
 	}
 
