@@ -1,19 +1,19 @@
 <?php
 /**
  * The MIT License (MIT)
- * 
+ *
  * Copyright (c) 2011-2014 BitPay
- * 
+ *
  * Permission is hereby granted, free of charge, to any person obtaining a copy
  * of this software and associated documentation files (the "Software"), to deal
  * in the Software without restriction, including without limitation the rights
  * to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
  * copies of the Software, and to permit persons to whom the Software is
  * furnished to do so, subject to the following conditions:
- * 
+ *
  * The above copyright notice and this permission notice shall be included in
  * all copies or substantial portions of the Software.
- * 
+ *
  * THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
  * IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
  * FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
@@ -335,7 +335,12 @@ class plgVmPaymentBitPay extends vmPSPlugin
         }
         $bitpay_data            = file_get_contents("php://input");
         $bitpay_data            = json_decode($bitpay_data, true);
-        $bitpay_data['posData'] = json_decode($bitpay_data['posData'], true);
+
+        if (!isset($bitpay_data['id']))
+        {
+            bplog('no invoice in data');
+            return NULL;
+        }
 
         if (!isset($bitpay_data['posData']))
         {
@@ -364,9 +369,45 @@ class plgVmPaymentBitPay extends vmPSPlugin
             return NULL;
         }
 
+        // Call BitPay
+        $curl   = curl_init('https://bitpay.com/api/invoice/'.$bitpay_data['id']);
+        $length = 0;
+
+        $uname  = base64_encode($method->merchant_apikey);
+        $header = array(
+            'Content-Type: application/json',
+            "Content-Length: $length",
+            "Authorization: Basic $uname",
+            'X-BitPay-Plugin-Info: virtuemart033114',
+        );
+
+        curl_setopt($curl, CURLOPT_PORT, 443);
+        curl_setopt($curl, CURLOPT_HTTPHEADER, $header);
+        curl_setopt($curl, CURLOPT_TIMEOUT, 10);
+        curl_setopt($curl, CURLOPT_HTTPAUTH, CURLAUTH_BASIC ) ;
+        curl_setopt($curl, CURLOPT_SSL_VERIFYPEER, 1); // verify certificate
+        curl_setopt($curl, CURLOPT_SSL_VERIFYHOST, 2); // check existence of CN and verify that it matches hostname
+        curl_setopt($curl, CURLOPT_RETURNTRANSFER, 1);
+        curl_setopt($curl, CURLOPT_FORBID_REUSE, 1);
+        curl_setopt($curl, CURLOPT_FRESH_CONNECT, 1);
+
+        $responseString = curl_exec($curl);
+
+        if($responseString == false)
+        {
+            return NULL;
+        }
+        else
+        {
+            $bitpay_data = json_decode($responseString, true);
+        }
+        curl_close($curl);
+
+        $this->logInfo ('IPN ' . implode (' / ', $bitpay_data), 'message');
+
         if ($bitpay_data['status'] != 'confirmed' and $bitpay_data['status'] != 'complete')
         {
-            return NULL; // not the status we're looking for 
+            return NULL; // not the status we're looking for
         }
 
         $order['order_status'] = 'C'; // move to admin method option?
@@ -455,7 +496,7 @@ class plgVmPaymentBitPay extends vmPSPlugin
 
     /**
      * getGMTTimeStamp:
-     * 
+     *
      * this function creates a timestamp formatted as per requirement in the
      * documentation
      *
@@ -577,8 +618,8 @@ class plgVmPaymentBitPay extends vmPSPlugin
         $options['orderID']          = $order['details']['BT']->order_number;
         $options['price']            = $order['details']['BT']->order_total;
 
-        $postOptions = array('orderID', 'itemDesc', 'itemCode', 'notificationEmail', 'notificationURL', 'redirectURL', 
-            'posData', 'price', 'currency', 'physical', 'fullNotifications', 'transactionSpeed', 'buyerName', 
+        $postOptions = array('orderID', 'itemDesc', 'itemCode', 'notificationEmail', 'notificationURL', 'redirectURL',
+            'posData', 'price', 'currency', 'physical', 'fullNotifications', 'transactionSpeed', 'buyerName',
             'buyerAddress1', 'buyerAddress2', 'buyerCity', 'buyerState', 'buyerZip', 'buyerEmail', 'buyerPhone');
 
         foreach($postOptions as $o)
@@ -595,7 +636,7 @@ class plgVmPaymentBitPay extends vmPSPlugin
         $curl   = curl_init('https://bitpay.com/api/invoice/');
         $length = 0;
         if ($post)
-        {	
+        {
             curl_setopt($curl, CURLOPT_POST, 1);
             curl_setopt($curl, CURLOPT_POSTFIELDS, $post);
             $length = strlen($post);
@@ -685,7 +726,7 @@ defined('_JEXEC') or die('Restricted access');
  * So It should be an extension of JElement
  * Those plugins cannot be configured througth the Plugin Manager anyway.
  */
-if (!class_exists( 'VmConfig' )) 
+if (!class_exists( 'VmConfig' ))
 {
     require(JPATH_ADMINISTRATOR . DS . 'components' . DS . 'com_virtuemart'.DS.'helpers'.DS.'config.php');
 }
