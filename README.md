@@ -1,44 +1,33 @@
-bitpay/virtuemart-plugin
-========================
+# Description
 
-# Installation
+Bitcoin payment plugin for VirtueMart using the bitpay.com service.
 
-The VirtueMart Extension Manager expects a zip file for installation.  The contents of the zip file can be found in the upload subdirectory.  Create  a zip file of everything in the upload directory and then follow the configuration instructions below.
 
-# Configuration
+## Quick Start Guide
 
-1. Got to Extension Manager: Install
-2. Browse and select zip file, click Upload & Install.
-3. Go to Manage, and find the plugin, click on publish.
-4. Go to Components -> VirtueMart and click on Payment Methods.
-5. Click New. and type in the information, selecting VMPAYMENT_BITPAY as Payment Method.
-6. Create an API Key in your BitPay Merchant account at https://bitpay.com.
-7. Click Configuration in the Tab menu, and enter your API Key from step 6.
+To get up and running with our plugin quickly, see the GUIDE here: https://github.com/bitpay/virtuemart-plugin/blob/master/GUIDE.md
 
-# Usage
 
-@TODO
+## Support
 
-# Support
-
-## BitPay Support
+**BitPay Support:**
 
 * [Github Issues](https://github.com/bitpay/oscommerce-plugin/issues)
   * Open an Issue if you are having issues with this plugin
 * [Support](https://support.bitpay.com/)
   * Checkout the BitPay support site
 
-## VirtueMart Support
+**VirtueMart Support:**
 
 * [Homepage](http://virtuemart.net/)
 * [Documentation](http://docs.virtuemart.net/)
 * [Forums](http://forum.virtuemart.net/)
 
-# Contribute
+## Contribute
 
 To contribute to this project, please fork and submit a pull request.
 
-# License
+## License
 
 The MIT License (MIT)
 
