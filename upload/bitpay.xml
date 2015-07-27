@@ -2,7 +2,7 @@
 <!--
 The MIT License (MIT)
 
-Copyright (c) 2011-2014 BitPay
+Copyright (c) 2011-2015 BitPay
 
 Permission is hereby granted, free of charge, to any person obtaining a copy
 of this software and associated documentation files (the "Software"), to deal
@@ -26,20 +26,19 @@ THE SOFTWARE.
     <name>VMPAYMENT_BITPAY</name>
     <creationDate>July 27 2012</creationDate>
     <author>BitPay</author>
-    <authorUrl>http://www.bitpay.com</authorUrl>
+    <authorUrl>https://www.bitpay.com</authorUrl>
     <copyright>Copyright</copyright>
-    <license>http://www.gnu.org/licenses/gpl-2.0.html GNU/GPL</license>
+    <license>http://opensource.org/licenses/MIT MIT</license>
     <version>1.0.0</version>
     <description>BitPay payment plugin</description>
     <languages>
-	<language tag="en-GB">en-GB.plg_vmpayment_bitpay.ini</language>
+        <language tag="en-GB">en-GB.plg_vmpayment_bitpay.ini</language>
     </languages>
     <files>
-	<filename plugin="bitpay">bitpay.php</filename>
+        <filename plugin="bitpay">bitpay.php</filename>
     </files>
-	<params addpath="/plugins/vmpayment/bitpay" />
+    <params addpath="/plugins/vmpayment/bitpay" />
     <params addpath="/administrator/components/com_virtuemart/elements">
-
-	<param name="merchant_apikey" type="text"  label="Merchant API Key" description="Merchant API Key" />
+        <param name="merchant_apikey" type="text" label="Legacy API Key" description="Legacy API Key" />
     </params>
 </install>
