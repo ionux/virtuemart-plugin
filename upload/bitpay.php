@@ -1,8 +1,17 @@
 <?php
 /**
+ * @plugin VmPayment - BitPay
+ * @Website : https://bitpay.com
+ * @package VirtueMart
+ * @subpackage Plugins - payment
+ * @author Integrations Team
+ * @copyright 2015 BitPay
+ */
+
+/**
  * The MIT License (MIT)
  *
- * Copyright (c) 2011-2014 BitPay
+ * Copyright (c) 2011-2015 BitPay
  *
  * Permission is hereby granted, free of charge, to any person obtaining a copy
  * of this software and associated documentation files (the "Software"), to deal
@@ -23,31 +32,77 @@
  * THE SOFTWARE.
  */
 
-function bplog($contents)
-{
-	error_log($contents);
+if (!defined('_JEXEC')) {
+    bplog('JEXEC not defined');
+    die('Restricted access');
 }
 
-defined('_JEXEC') or die('Restricted access');
+if(!defined('JPATH_BASE')) {
+    bplog('JPATH_BASE not defined');
+    die('Restricted access');
+}
 
-if (!class_exists('vmPSPlugin'))
-{
+if (!class_exists('vmPSPlugin')) {
     require(JPATH_VM_PLUGINS . DS . 'vmpsplugin.php');
+}
+
+if (!class_exists('VmConfig')) {
+    require(JPATH_ADMINISTRATOR . DS . 'components' . DS . 'com_virtuemart' . DS . 'helpers' . DS . 'config.php');
+}
+
+if (!class_exists('ShopFunctions')) {
+    require(JPATH_VM_ADMINISTRATOR . DS . 'helpers' . DS . 'shopfunctions.php');
+}
+
+if (!class_exists('shopFunctionsF')) {
+    require(JPATH_VM_SITE . DS . 'helpers' . DS . 'shopfunctionsf.php');
+}
+
+if (!class_exists('VirtueMartModelOrders')) {
+    require(JPATH_VM_ADMINISTRATOR . DS . 'models' . DS . 'orders.php');
+}
+
+if (!class_exists('VirtueMartCart')) {
+    require(JPATH_VM_SITE . DS . 'helpers' . DS . 'cart.php');
+}
+
+function bplog($contents) {
+    if (isset($contents)) {
+        if (is_resource($contents)) {
+            return error_log(serialize($contents));
+        } else {
+            return error_log(var_export($contents, true));
+        }
+    } else {
+        return false;
+    }
 }
 
 class plgVmPaymentBitPay extends vmPSPlugin
 {
+    public static $_this = false;
+
+    const BPDEBUG = 1;
 
     /**
      * @param $subject
      * @param $config
      */
-    function __construct(&$subject, $config)
+    public function __construct(&$subject, $config)
     {
         parent::__construct($subject, $config);
+
         $this->_loggable   = true;
+        $this->_tablepkey  = 'id';
+		$this->_tableId    = 'id';
         $this->tableFields = array_keys($this->getTableSQLFields());
         $varsToPush        = $this->getVarsToPush();
+
+        if (BPDEBUG) {
+            bplog('In __construct()...');
+            bplog($varsToPush);
+        }
+
         $this->setConfigParameterable($this->_configTableFieldName, $varsToPush);
     }
 
@@ -58,6 +113,10 @@ class plgVmPaymentBitPay extends vmPSPlugin
      */
     public function getVmPluginCreateTableSQL()
     {
+        if (BPDEBUG) {
+            bplog('In getVmPluginCreateTableSQL()...');
+        }
+
         return $this->createTableSQL('Payment BitPay Table');
     }
 
@@ -66,21 +125,24 @@ class plgVmPaymentBitPay extends vmPSPlugin
      *
      * @return array
      */
-    function getTableSQLFields()
+    public function getTableSQLFields()
     {
+        if (BPDEBUG) {
+            bplog('In getTableSQLFields()...');
+        }
+
         $SQLfields = array(
             'id'                          => 'int(1) UNSIGNED NOT NULL AUTO_INCREMENT',
-            'virtuemart_order_id'         => 'int(1) UNSIGNED',
-            'order_number'                => 'char(64)',
-            'virtuemart_paymentmethod_id' => 'mediumint(1) UNSIGNED',
-            'payment_name'                => 'varchar(5000)',
+            'virtuemart_order_id'         => 'int(1) UNSIGNED DEFAULT NULL',
+            'order_number'                => 'char(64) DEFAULT NULL',
+            'virtuemart_paymentmethod_id' => 'mediumint(1) UNSIGNED DEFAULT NULL',
+            'payment_name'                => 'varchar(5000) DEFAULT NULL',
             'payment_order_total'         => 'decimal(15,5) NOT NULL DEFAULT \'0.00000\'',
-            'payment_currency'            => 'char(3)'
+            'payment_currency'            => 'char(3) DEFAULT NULL',
         );
 
         return $SQLfields;
     }
-
 
     /**
      * Display stored payment data for an order
@@ -90,23 +152,33 @@ class plgVmPaymentBitPay extends vmPSPlugin
      *
      * @return
      */
-    function plgVmOnShowOrderBEPayment($virtuemart_order_id, $virtuemart_payment_id)
+    public function plgVmOnShowOrderBEPayment($virtuemart_order_id, $virtuemart_payment_id)
     {
-        if (!$this->selectedThisByMethodId($virtuemart_payment_id))
-        {
+        if (BPDEBUG) {
+            bplog('In plgVmOnShowOrderBEPayment()...');
+            bplog('virtuemart_order_id: ' . $virtuemart_order_id);
+            bplog('virtuemart_payment_id: ' . $virtuemart_payment_id);
+        }
+
+        if (!$this->selectedThisByMethodId($virtuemart_payment_id)) {
             return NULL; // Another method was selected, do nothing
         }
 
-        if (!($paymentTable = $this->getDataByOrderId($virtuemart_order_id)))
-        {
+        if (!($paymentTable = $this->getDataByOrderId($virtuemart_order_id))) {
+            bplog('In plgVmOnShowOrderBEPayment: Could not retrieve data for this order!');
+            JError::raiseWarning(500, 'Could not retrieve data for this order!');
             return NULL;
         }
 
-        $html = '<table class="adminlist">' . "\n";
+        $html  = '<table class="adminlist">' . "\n";
         $html .= $this->getHtmlHeaderBE();
         $html .= $this->getHtmlRowBE('BITPAY_PAYMENT_NAME', $paymentTable->payment_name);
         $html .= $this->getHtmlRowBE('BITPAY_PAYMENT_TOTAL_CURRENCY', $paymentTable->payment_order_total . ' ' . $paymentTable->payment_currency);
         $html .= '</table>' . "\n";
+
+        if (BPDEBUG) {
+            bplog('HTML: ' . $html);
+        }
 
         return $html;
     }
@@ -118,18 +190,20 @@ class plgVmPaymentBitPay extends vmPSPlugin
      *
      * @return
      */
-    function getCosts(VirtueMartCart $cart, $method, $cart_prices)
+    public function getCosts(VirtueMartCart $cart, $method, $cart_prices)
     {
-        if (preg_match('/%$/', $method->cost_percent_total))
-        {
-            $cost_percent_total = substr($method->cost_percent_total, 0, -1);
-        }
-        else
-        {
-            $cost_percent_total = $method->cost_percent_total;
+        $cost_percent_total     = str_ireplace('$', '', $method->cost_percent_total);
+        $cost_per_transaction   = str_ireplace('$', '', $method->cost_per_transaction);
+        $cart_prices_salesPrice = str_ireplace('$', '', $cart_prices['salesPrice']);
+
+        if (BPDEBUG) {
+            bplog('cost_percent_total: ' . $cost_percent_total);
+            bplog('cost_per_transaction: ' . $cost_per_transaction);
+            bplog('cart_prices_salesPrice: ' . $cart_prices_salesPrice);
+            bplog('getCosts() returning: ' . ($cost_per_transaction + ($cart_prices_salesPrice * $cost_percent_total * 0.01)));
         }
 
-        return ($method->cost_per_transaction + ($cart_prices['salesPrice'] * $cost_percent_total * 0.01));
+        return ($cost_per_transaction + ($cart_prices_salesPrice * $cost_percent_total * 0.01));
     }
 
     /**
@@ -141,47 +215,76 @@ class plgVmPaymentBitPay extends vmPSPlugin
      *
      * @return boolean
      */
-    protected function checkConditions($cart, $method, $cart_prices)
+    public protected function checkConditions($cart, $method, $cart_prices)
     {
         $this->convert($method);
-        // 		$params = new JParameter($payment->payment_params);
-        $address = (($cart->ST == 0) ? $cart->BT : $cart->ST);
 
+        $address     = (($cart->ST == 0) ? $cart->BT : $cart->ST);
         $amount      = $cart_prices['salesPrice'];
-        $amount_cond = ($amount >= $method->min_amount AND $amount <= $method->max_amount
-            OR
-            ($method->min_amount <= $amount AND ($method->max_amount == 0)));
-        if (!$amount_cond)
-        {
+        $amount_cond = ($amount >= $method->min_amount AND $amount <= $method->max_amount OR ($method->min_amount <= $amount AND ($method->max_amount == 0)));
+
+        if (BPDEBUG) {
+            bplog('In checkConditions()...');
+            bplog('address: ' . $address);
+            bplog('amount: ' . $amount);
+            bplog('amount_cond: ' . $amount_cond);
+        }
+
+        if (!$amount_cond) {
+            bplog('In checkConditions(): Returning false because !amount_cond.');
             return false;
         }
+
         $countries = array();
-        if (!empty($method->countries))
-        {
-            if (!is_array($method->countries))
-            {
-                $countries[0] = $method->countries;
+
+        if (!empty($method->countries)) {
+            if (BPDEBUG) {
+                bplog('In checkConditions(): !empty(method->countries)');
             }
-            else
-            {
+
+            if (!is_array($method->countries)) {
+                if (BPDEBUG) {
+                    bplog('In checkConditions(): !is_array(method->countries), so countries[0] = method->countries');
+                }
+
+                $countries[0] = $method->countries;
+            } else {
+                if (BPDEBUG) {
+                    bplog('In checkConditions(): empty(method->countries), so countries = method->countries');
+                }
+
                 $countries = $method->countries;
             }
         }
 
         // probably did not gave his BT:ST address
-        if (!is_array($address))
-        {
+        if (!is_array($address)) {
+            if (BPDEBUG) {
+                bplog('In checkConditions(): !is_array(address), so address['virtuemart_country_id'] = 0');
+            }
+
             $address                          = array();
             $address['virtuemart_country_id'] = 0;
         }
 
-        if (!isset($address['virtuemart_country_id']))
-        {
+        if (!isset($address['virtuemart_country_id'])) {
+            if (BPDEBUG) {
+                bplog('In checkConditions(): !isset(address['virtuemart_country_id']), so address['virtuemart_country_id'] = 0');
+            }
+
             $address['virtuemart_country_id'] = 0;
         }
-        if (count($countries) == 0 || in_array($address['virtuemart_country_id'], $countries) || count($countries) == 0)
-        {
+
+        if (count($countries) == 0 || in_array($address['virtuemart_country_id'], $countries)) {
+            if (BPDEBUG) {
+                bplog('In checkConditions(): returning true');
+            }
+
             return true;
+        }
+
+        if (BPDEBUG) {
+            bplog('In checkConditions(): returning false');
         }
 
         return false;
@@ -190,10 +293,16 @@ class plgVmPaymentBitPay extends vmPSPlugin
     /**
      * @param $method
      */
-    function convert($method)
+    public function convert($method)
     {
         $method->min_amount = (float)$method->min_amount;
         $method->max_amount = (float)$method->max_amount;
+
+        if (BPDEBUG) {
+            bplog('In convert(): ');
+            bplog('method->min_amount = ' . $method->min_amount);
+            bplog('method->max_amount = ' . $method->max_amount);
+        }
     }
 
     /*
@@ -209,8 +318,13 @@ class plgVmPaymentBitPay extends vmPSPlugin
      *
      * @return
      */
-    function plgVmOnStoreInstallPaymentPluginTable($jplugin_id)
+    public function plgVmOnStoreInstallPaymentPluginTable($jplugin_id)
     {
+        if (BPDEBUG) {
+            bplog('In plgVmOnStoreInstallPaymentPluginTable(): ');
+            bplog('jplugin_id = ' . $jplugin_id);
+        }
+
         return $this->onStoreInstallPluginTable($jplugin_id);
     }
 
@@ -229,6 +343,10 @@ class plgVmPaymentBitPay extends vmPSPlugin
 
     public function plgVmonSelectedCalculatePricePayment(VirtueMartCart $cart, array &$cart_prices, &$cart_prices_name)
     {
+        if (BPDEBUG) {
+            bplog('In plgVmonSelectedCalculatePricePayment()...');
+        }
+
         return $this->onSelectedCalculatePrice($cart, $cart_prices, $cart_prices_name);
     }
 
@@ -238,19 +356,42 @@ class plgVmPaymentBitPay extends vmPSPlugin
      *
      * @return
      */
-    function plgVmgetPaymentCurrency($virtuemart_paymentmethod_id, &$paymentCurrencyId)
+    public function plgVmgetPaymentCurrency($virtuemart_paymentmethod_id, &$paymentCurrencyId)
     {
-        if (!($method = $this->getVmPluginMethod($virtuemart_paymentmethod_id)))
-        {
+        if (BPDEBUG) {
+            bplog('In plgVmgetPaymentCurrency()...');
+        }
+
+        if (!($method = $this->getVmPluginMethod($virtuemart_paymentmethod_id))) {
+            if (BPDEBUG) {
+                bplog('In plgVmgetPaymentCurrency(): ');
+                bplog('!(method = this->getVmPluginMethod(virtuemart_paymentmethod_id))');
+                bplog('Returning null...');
+            }
+
             return NULL; // Another method was selected, do nothing
         }
-        if (!$this->selectedThisElement($method->payment_element))
-        {
+
+        if (!$this->selectedThisElement($method->payment_element)) {
+            if (BPDEBUG) {
+                bplog('In plgVmgetPaymentCurrency(): ');
+                bplog('!this->selectedThisElement(method->payment_element)');
+                bplog('Returning false...');
+            }
+
             return false;
         }
+
         $this->getPaymentCurrency($method);
 
         $paymentCurrencyId = $method->payment_currency;
+
+        if (BPDEBUG) {
+            bplog('In plgVmgetPaymentCurrency(): ');
+            bplog('paymentCurrencyId = ' . $paymentCurrencyId);
+            bplog('Returning...');
+        }
+
         return;
     }
 
@@ -265,8 +406,12 @@ class plgVmPaymentBitPay extends vmPSPlugin
      *
      * @return
      */
-    function plgVmOnCheckAutomaticSelectedPayment(VirtueMartCart $cart, array $cart_prices = array(), &$paymentCounter)
+    public function plgVmOnCheckAutomaticSelectedPayment(VirtueMartCart $cart, array $cart_prices = array(), &$paymentCounter)
     {
+        if (BPDEBUG) {
+            bplog('In plgVmOnCheckAutomaticSelectedPayment()...');
+        }
+
         return $this->onCheckAutomaticSelected($cart, $cart_prices, $paymentCounter);
     }
 
@@ -280,6 +425,10 @@ class plgVmPaymentBitPay extends vmPSPlugin
      */
     public function plgVmOnShowOrderFEPayment($virtuemart_order_id, $virtuemart_paymentmethod_id, &$payment_name)
     {
+        if (BPDEBUG) {
+            bplog('In plgVmOnShowOrderFEPayment()...');
+        }
+
         $this->onShowOrderFE($virtuemart_order_id, $virtuemart_paymentmethod_id, $payment_name);
     }
 
@@ -292,8 +441,12 @@ class plgVmPaymentBitPay extends vmPSPlugin
      *
      * @return mixed Null when for payment methods that were not selected, text (HTML) otherwise
      */
-    function plgVmonShowOrderPrintPayment($order_number, $method_id)
+    public function plgVmonShowOrderPrintPayment($order_number, $method_id)
     {
+        if (BPDEBUG) {
+            bplog('In plgVmonShowOrderPrintPayment()...');
+        }
+
         return $this->onShowOrderPrint($order_number, $method_id);
     }
 
@@ -304,8 +457,12 @@ class plgVmPaymentBitPay extends vmPSPlugin
      *
      * @return
      */
-    function plgVmDeclarePluginParamsPayment($name, $id, &$data)
+    public function plgVmDeclarePluginParamsPayment($name, $id, &$data)
     {
+        if (BPDEBUG) {
+            bplog('In plgVmDeclarePluginParamsPayment()...');
+        }
+
         return $this->declarePluginParams('payment', $name, $id, $data);
     }
 
@@ -316,8 +473,12 @@ class plgVmPaymentBitPay extends vmPSPlugin
      *
      * @return
      */
-    function plgVmSetOnTablePluginParamsPayment($name, $id, &$table)
+    public function plgVmSetOnTablePluginParamsPayment($name, $id, &$table)
     {
+        if (BPDEBUG) {
+            bplog('In plgVmSetOnTablePluginParamsPayment()...');
+        }
+
         return $this->setOnTablePluginParams($name, $id, $table);
     }
 
@@ -327,27 +488,22 @@ class plgVmPaymentBitPay extends vmPSPlugin
      *
      * @return
      */
-    function plgVmOnPaymentNotification ()
+    public function plgVmOnPaymentNotification()
     {
-        if (!class_exists ('VirtueMartModelOrders'))
-        {
-            require(JPATH_VM_ADMINISTRATOR . DS . 'models' . DS . 'orders.php');
+        if (BPDEBUG) {
+            bplog('In plgVmSetOnTablePluginParamsPayment()...');
         }
-        $bitpay_data            = file_get_contents("php://input");
-        $bitpay_data            = json_decode($bitpay_data, true);
 
-        if (!isset($bitpay_data['id']))
-        {
+        $bitpay_data = file_get_contents("php://input");
+        $bitpay_data = json_decode($bitpay_data, true);
+
+        if (!isset($bitpay_data['id']) || !isset($bitpay_data['posData'])) {
             bplog('no invoice in data');
             return NULL;
         }
 
-        if (!isset($bitpay_data['posData']))
-        {
-            bplog('no invoice in data');
-            return NULL;
-        }
         $order_number = $bitpay_data['posData']['id_order'];
+
         if (!($virtuemart_order_id = VirtueMartModelOrders::getOrderIdByOrderNumber ($order_number)))
         {
             bplog('order not found '.$order_number);
@@ -356,15 +512,15 @@ class plgVmPaymentBitPay extends vmPSPlugin
 
         $modelOrder = VmModel::getModel ('orders');
         $order      = $modelOrder->getOrder($virtuemart_order_id);
-        if (!$order)
-        {
+
+        if (!$order) {
             bplog('order could not be loaded '.$virtuemart_order_id);
             return NULL;
         }
 
         $method = $this->getVmPluginMethod($order['details']['BT']->virtuemart_paymentmethod_id);
-        if ($bitpay_data['posData']['hash'] != crypt($order_number, $method->merchant_apikey))
-        {
+
+        if ($bitpay_data['posData']['hash'] != crypt($order_number, $method->merchant_apikey)) {
             bplog('api key invalid for order '.$order_number);
             return NULL;
         }
@@ -373,11 +529,10 @@ class plgVmPaymentBitPay extends vmPSPlugin
         $curl   = curl_init('https://bitpay.com/api/invoice/'.$bitpay_data['id']);
         $length = 0;
 
-        $uname  = base64_encode($method->merchant_apikey);
         $header = array(
             'Content-Type: application/json',
             "Content-Length: $length",
-            "Authorization: Basic $uname",
+            "Authorization: Basic " . base64_encode($method->merchant_apikey),
             'X-BitPay-Plugin-Info: virtuemart033114',
         );
 
@@ -419,19 +574,10 @@ class plgVmPaymentBitPay extends vmPSPlugin
      *
      * @return bool|null|string
      */
-    function plgVmOnPaymentResponseReceived (&$html)
+    public function plgVmOnPaymentResponseReceived(&$html)
     {
-        if (!class_exists ('VirtueMartCart'))
-        {
-            require(JPATH_VM_SITE . DS . 'helpers' . DS . 'cart.php');
-        }
-        if (!class_exists ('shopFunctionsF'))
-        {
-            require(JPATH_VM_SITE . DS . 'helpers' . DS . 'shopfunctionsf.php');
-        }
-        if (!class_exists ('VirtueMartModelOrders'))
-        {
-            require(JPATH_VM_ADMINISTRATOR . DS . 'models' . DS . 'orders.php');
+        if (BPDEBUG) {
+            bplog('In plgVmOnPaymentResponseReceived()...');
         }
 
         // the payment itself should send the parameter needed.
@@ -476,8 +622,12 @@ class plgVmPaymentBitPay extends vmPSPlugin
      *
      * @return
      */
-    function plgVmDisplayListFEPayment (VirtueMartCart $cart, $selected = 0, &$htmlIn)
+    public function plgVmDisplayListFEPayment(VirtueMartCart $cart, $selected = 0, &$htmlIn)
     {
+        if (BPDEBUG) {
+            bplog('In plgVmDisplayListFEPayment()...');
+        }
+
         $session = JFactory::getSession ();
         $errors  = $session->get ('errorMessages', 0, 'vm');
 
@@ -504,6 +654,10 @@ class plgVmPaymentBitPay extends vmPSPlugin
      */
     public function getGMTTimeStamp()
     {
+        if (BPDEBUG) {
+            bplog('In getGMTTimeStamp()...');
+        }
+
         /* Format: YYYYDDMMHHNNSSKKK000sOOO
             YYYY is a 4-digit year
             DD is a 2-digit zero-padded day of month
@@ -533,8 +687,12 @@ class plgVmPaymentBitPay extends vmPSPlugin
      *
      * @return
      */
-    private function makeXMLTree ($data, &$outputArray = array())
+    private function makeXMLTree($data, &$outputArray = array())
     {
+        if (BPDEBUG) {
+            bplog('In makeXMLTree()...');
+        }
+
         $parser = xml_parser_create();
         xml_parser_set_option($parser, XML_OPTION_CASE_FOLDING, 0);
         xml_parser_set_option($parser, XML_OPTION_SKIP_WHITE, 1);
@@ -574,112 +732,66 @@ class plgVmPaymentBitPay extends vmPSPlugin
      *
      * @return
      */
-    function plgVmConfirmedOrder($cart, $order)
+    public function plgVmConfirmedOrder($cart, $order)
     {
-        if (!($method = $this->getVmPluginMethod($order['details']['BT']->virtuemart_paymentmethod_id)))
-        {
+        if (BPDEBUG) {
+            bplog('In plgVmConfirmedOrder()...');
+        }
+
+        if (!($method = $this->getVmPluginMethod($order['details']['BT']->virtuemart_paymentmethod_id))) {
             return NULL; // Another method was selected, do nothing
         }
-        if (!$this->selectedThisElement($method->payment_element))
-        {
+
+        if (!$this->selectedThisElement($method->payment_element)) {
             return false;
         }
-        // 		$params = new JParameter($payment->payment_params);
+
         $lang     = JFactory::getLanguage();
         $filename = 'com_virtuemart';
-        $lang->load($filename, JPATH_ADMINISTRATOR);
         $vendorId = 0;
         $html     = "";
 
-        if (!class_exists('VirtueMartModelOrders'))
-        {
-            require(JPATH_VM_ADMINISTRATOR . DS . 'models' . DS . 'orders.php');
-        }
+        $lang->load($filename, JPATH_ADMINISTRATOR);
+
         $this->getPaymentCurrency($method, true);
 
         // END printing out HTML Form code (Payment Extra Info)
         $q  = 'SELECT `currency_code_3` FROM `#__virtuemart_currencies` WHERE `virtuemart_currency_id`="' . $method->payment_currency . '" ';
         $db = JFactory::getDBO();
+
         $db->setQuery($q);
+
         $currency_code_3        = $db->loadResult();
         $paymentCurrency        = CurrencyDisplay::getInstance($method->payment_currency);
         $totalInPaymentCurrency = round($paymentCurrency->convertCurrencyTo($method->payment_currency, $order['details']['BT']->order_total, false), 2);
         $cd                     = CurrencyDisplay::getInstance($cart->pricesCurrency);
         $usrBT                  = $order['details']['BT'];
-        $usrST                  = ((isset($order['details']['ST'])) ? $order['details']['ST'] : $order['details']['BT']);
+        $usrST                  = (isset($order['details']['ST'])) ? $order['details']['ST'] : $order['details']['BT'];
 
         $options['transactionSpeed'] = 'high';
         $options['currency']         = $currency_code_3;
-        $options['notificationURL']  = (JROUTE::_ (JURI::root () . 'index.php?option                                                 = com_virtuemart&view = pluginresponse&task = pluginnotification&tmpl   = component'));
-        $options['redirectURL']      = (JROUTE::_ (JURI::root () . 'index.php?option                                                 = com_virtuemart&view = pluginresponse&task = pluginresponsereceived&on = ' . $order['details']['BT']->order_number . '&pm = ' . $order['details']['BT']->virtuemart_paymentmethod_id . '&Itemid = ' . JRequest::getInt ('Itemid')));
-        $options['posData']          = '{"id_order": "' . $order['details']['BT']->order_number . '"';
-        $options['posData']         .= ', "hash": "' . crypt($order['details']['BT']->order_number, $method->merchant_apikey) . '"';
-        $options['posData']         .= '}';
+        $options['notificationURL']  = JROUTE::_(JURI::root() . 'index.php?option=com_virtuemart&view=pluginresponse&task=pluginnotification&tmpl=component');
+        $options['redirectURL']      = JROUTE::_(JURI::root() . 'index.php?option=com_virtuemart&view=pluginresponse&task=pluginresponsereceived&on=' . $order['details']['BT']->order_number . '&pm=' . $order['details']['BT']->virtuemart_paymentmethod_id . '&Itemid=' . JRequest::getInt('Itemid'));
+
+        $options['posData']          = json_encode(
+                                                   array(
+                                                         'id_order' => $order['details']['BT']->order_number,
+                                                         'hash' => crypt($order['details']['BT']->order_number, $method->merchant_apikey),
+                                                        )
+                                                   );
+
         $options['orderID']          = $order['details']['BT']->order_number;
         $options['price']            = $order['details']['BT']->order_total;
 
-        $postOptions = array('orderID', 'itemDesc', 'itemCode', 'notificationEmail', 'notificationURL', 'redirectURL',
-            'posData', 'price', 'currency', 'physical', 'fullNotifications', 'transactionSpeed', 'buyerName',
-            'buyerAddress1', 'buyerAddress2', 'buyerCity', 'buyerState', 'buyerZip', 'buyerEmail', 'buyerPhone');
-
-        foreach($postOptions as $o)
-        {
-            if (array_key_exists($o, $options))
-            {
-                $post[$o] = $options[$o];
-            }
-        }
-
-        $post = json_encode($post);
-
         // Call BitPay
-        $curl   = curl_init('https://bitpay.com/api/invoice/');
-        $length = 0;
-        if ($post)
-        {
-            curl_setopt($curl, CURLOPT_POST, 1);
-            curl_setopt($curl, CURLOPT_POSTFIELDS, $post);
-            $length = strlen($post);
-        }
-
-        $uname  = base64_encode($method->merchant_apikey);
-        $header = array(
-            'Content-Type: application/json',
-            "Content-Length: $length",
-            "Authorization: Basic $uname",
-            'X-BitPay-Plugin-Info: virtuemart033114',
-        );
-
-        curl_setopt($curl, CURLOPT_PORT, 443);
-        curl_setopt($curl, CURLOPT_HTTPHEADER, $header);
-        curl_setopt($curl, CURLOPT_TIMEOUT, 10);
-        curl_setopt($curl, CURLOPT_HTTPAUTH, CURLAUTH_BASIC ) ;
-        curl_setopt($curl, CURLOPT_SSL_VERIFYPEER, 1); // verify certificate
-        curl_setopt($curl, CURLOPT_SSL_VERIFYHOST, 2); // check existence of CN and verify that it matches hostname
-        curl_setopt($curl, CURLOPT_RETURNTRANSFER, 1);
-        curl_setopt($curl, CURLOPT_FORBID_REUSE, 1);
-        curl_setopt($curl, CURLOPT_FRESH_CONNECT, 1);
-
-        $responseString = curl_exec($curl);
-
-        if($responseString == false)
-        {
-            $response = curl_error($curl);
-        }
-        else
-        {
-            $response = json_decode($responseString, true);
-        }
-        curl_close($curl);
+        $response = $this->makeCurlCall();
 
         $this->logInfo ('invoice ' . implode (' / ', $response), 'message');
-        if (isset($response['url']))
-        {
+
+        if (isset($response['url'])) {
             header('Location: ' . $response['url']);
             exit;
-        }
-        else
-        {
+        } else {
             bplog('curl error - no invoice url');
         }
     }
@@ -688,52 +800,82 @@ class plgVmPaymentBitPay extends vmPSPlugin
      * @param $virtualmart_order_id
      * @param $html
      */
-    function _handlePaymentCancel ($virtuemart_order_id, $html)
+    public function _handlePaymentCancel($virtuemart_order_id, $html)
     {
-        if (!class_exists ('VirtueMartModelOrders'))
-        {
-            require(JPATH_VM_ADMINISTRATOR . DS . 'models' . DS . 'orders.php');
+        if (BPDEBUG) {
+            bplog('In _handlePaymentCancel()...');
         }
-        $modelOrder = VmModel::getModel ('orders');
-        $modelOrder->remove (array('virtuemart_order_id' => $virtuemart_order_id));
+
+        $modelOrder = VmModel::getModel('orders');
+        $modelOrder->remove(array('virtuemart_order_id' => $virtuemart_order_id));
+
         // error while processing the payment
-        $mainframe = JFactory::getApplication ();
-        $mainframe->redirect (JRoute::_ ('index.php?option=com_virtuemart&view=cart&task=editpayment'), $html);
+        $mainframe = JFactory::getApplication();
+        $mainframe->redirect(JRoute::_('index.php?option=com_virtuemart&view=cart&task=editpayment'), $html);
     }
 
     /**
-     * takes a string and returns an array of characters
+     * Wrapper for cURL extension calls
      *
-     * @param string $input string of characters
-     * @return array
+     * @param $post
+     * @param $url
+     * @param $opts
      */
-    function toCharArray($input)
+    public function makeCurlCall($url, $post = null, $opts = array())
     {
-        $len = strlen ( $input );
-        for($j = 0; $j < $len; $j ++)
-        {
-            $char [$j] = substr ( $input, $j, 1 );
+        if (BPDEBUG) {
+            bplog('In makeCurlCall()...');
         }
-        return ($char);
+
+        $length = 0;
+
+        if ($post !== null) {
+            curl_setopt($curl, CURLOPT_POST, 1);
+            curl_setopt($curl, CURLOPT_POSTFIELDS, $post);
+            $length = strlen($post);
+
+            $postOptions = array('orderID', 'itemDesc', 'itemCode', 'notificationEmail', 'notificationURL', 'redirectURL',
+                'posData', 'price', 'currency', 'physical', 'fullNotifications', 'transactionSpeed', 'buyerName',
+                'buyerAddress1', 'buyerAddress2', 'buyerCity', 'buyerState', 'buyerZip', 'buyerEmail', 'buyerPhone');
+
+            foreach($postOptions as $o) {
+                if (array_key_exists($o, $options)) {
+                    $post[$o] = $options[$o];
+                }
+            }
+
+            $post = json_encode($post);
+        }
+
+        //$curl   = curl_init('https://bitpay.com/api/invoice/'.$bitpay_data['id']);
+        //$curl   = curl_init('https://bitpay.com/api/invoice/');
+
+        if ($curl === false || is_resource($curl) === false) {
+            bplog('In plgVmConfirmedOrder(): Could not initialize cURL resource!');
+            die('There was an error connecting to BitPay. Please contact the store administrator to process your order.');
+        }
+
+        $header = array(
+            'Content-Type: application/json',
+            "Content-Length: $length",
+            "Authorization: Basic " . base64_encode($method->merchant_apikey),
+            'X-BitPay-Plugin-Info: virtuemart033114',
+        );
+
+        curl_setopt($curl, CURLOPT_PORT, 443);
+        curl_setopt($curl, CURLOPT_HTTPHEADER, $header);
+        curl_setopt($curl, CURLOPT_TIMEOUT, 10);
+        curl_setopt($curl, CURLOPT_HTTPAUTH, CURLAUTH_BASIC ) ;
+        curl_setopt($curl, CURLOPT_SSL_VERIFYPEER, 1);
+        curl_setopt($curl, CURLOPT_SSL_VERIFYHOST, 2);
+        curl_setopt($curl, CURLOPT_RETURNTRANSFER, 1);
+        curl_setopt($curl, CURLOPT_FORBID_REUSE, 1);
+        curl_setopt($curl, CURLOPT_FRESH_CONNECT, 1);
+
+        $responseString = curl_exec($curl);
+
+        $response = ($responseString == false) ? curl_error($curl): json_decode($responseString, true);
+
+        curl_close($curl);
     }
 }
-
-defined('_JEXEC') or die('Restricted access');
-
-/*
- * This class is used by VirtueMart Payment  Plugins
- * which uses JParameter
- * So It should be an extension of JElement
- * Those plugins cannot be configured througth the Plugin Manager anyway.
- */
-if (!class_exists( 'VmConfig' ))
-{
-    require(JPATH_ADMINISTRATOR . DS . 'components' . DS . 'com_virtuemart'.DS.'helpers'.DS.'config.php');
-}
-if (!class_exists('ShopFunctions'))
-{
-    require(JPATH_VM_ADMINISTRATOR . DS . 'helpers' . DS . 'shopfunctions.php');
-}
-
-// Check to ensure this file is within the rest of the framework
-defined('JPATH_BASE') or die();
